@@ -1821,4 +1821,89 @@ class RiotAPI(object):
 
         print(f"Completed! Saved: {completed}, Errors: {errors}")
 
+    def save_match_json_from_matchlist(
+        self,
+        matchids: list[str],
+        output_dir: str,
+        max_retries: int = 5,
+    ):
+        """
+        matchidリストからマッチデータを取得し、JSONファイルとして保存する。
+
+        Args:
+            matchids: matchidリスト (例: ["JP1_123456", "JP1_789012"])
+            output_dir: 保存先ディレクトリ (例: "data/match")
+            max_retries: リトライ回数
+        """
+        os.makedirs(output_dir, exist_ok=True)
+
+        nums = self.get_matchids2(matchids)
+        print(f"Total match_ids: {len(nums)}")
+
+        # 既存ファイルをスキップ
+        to_process = []
+        for mid in nums:
+            json_path = os.path.join(output_dir, f"{self.region_prefix}{mid}.json")
+            if not os.path.exists(json_path):
+                to_process.append(mid)
+
+        print(f"Already saved: {len(nums) - len(to_process)}, To process: {len(to_process)}")
+
+        if not to_process:
+            print("All match JSONs already exist.")
+            return
+
+        completed = 0
+        errors = 0
+
+        for mid in tqdm(to_process, desc="Saving match data"):
+            url = (f"https://{self.routing}.api.riotgames.com/lol/match/v5/matches/"
+                   f"{self.region_prefix}{mid}")
+            params = {"api_key": self.api_key}
+
+            success = False
+            for attempt in range(max_retries):
+                try:
+                    resp = requests.get(url, params=params, timeout=10)
+
+                    if resp.status_code == 429:  # Rate limit
+                        wait = int(resp.headers.get("Retry-After", 5))
+                        time.sleep(wait + 1)
+                        continue
+
+                    if 500 <= resp.status_code < 600:  # Server error
+                        time.sleep(2)
+                        continue
+
+                    if resp.status_code == 404:
+                        print(f"  [{mid}] not found (404)")
+                        break
+
+                    resp.raise_for_status()
+                    match_data = resp.json()
+
+                    # Validate response
+                    if "info" not in match_data:
+                        print(f"  [{mid}] invalid response")
+                        break
+
+                    # Save JSON
+                    json_path = os.path.join(output_dir, f"{self.region_prefix}{mid}.json")
+                    with open(json_path, "w", encoding="utf-8") as f:
+                        json.dump(match_data, f, ensure_ascii=False, indent=2)
+
+                    completed += 1
+                    success = True
+                    time.sleep(random.uniform(0.1, 0.3))
+                    break
+
+                except requests.exceptions.RequestException as e:
+                    time.sleep(2)
+                    continue
+
+            if not success:
+                errors += 1
+
+        print(f"Completed! Saved: {completed}, Errors: {errors}")
+
 

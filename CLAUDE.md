@@ -21,8 +21,8 @@ wards論文からインスパイアを受け、以下の要素を考慮した指
 | 2 | ward検出モデルの構築 | 完了 |
 | 3 | ward座標抽出パイプライン構築 | 完了 |
 | 4 | チャンピオントラッキングモデルの試行 | 未着手 |
-| 5 | 視界スコア指標の設計・実装 | 未着手 |
-| 6 | 勝率予測モデルへの統合・評価 | 未着手 |
+| 5 | 視界スコア指標の設計・実装 | 完了 |
+| 6 | 勝率予測モデルへの統合・評価 | 完了 |
 
 ## User prompt
 Talk in Japanese.
@@ -57,8 +57,16 @@ pyLoL-v2/
 │   │   └── editor.py              # リプレイ編集
 │   ├── detection/                 # 検出モジュール（Phase 3〜4用）
 │   │   └── ward_detector.py       # ward検出クラス（未実装）
-│   ├── scoring/                   # 視界スコアモジュール（Phase 5用）
-│   │   └── vision_score.py        # 視界スコア計算（未実装）
+│   ├── scoring/                   # 視界スコアモジュール（Phase 5）
+│   │   ├── grid_generator.py      # グリッド特徴量生成
+│   │   ├── dataset_builder.py     # データセット構築
+│   │   ├── predictor.py           # 予測モデル（ロジスティック回帰/CNN）
+│   │   └── visualizer.py          # ヒートマップ可視化
+│   ├── prediction/                # 勝敗予測モジュール（Phase 6）
+│   │   ├── config.py              # 設定・定数
+│   │   ├── feature_extractor.py   # Timeline/Matchから特徴量抽出
+│   │   ├── baseline_predictor.py  # 勝敗予測モデル
+│   │   └── evaluator.py           # モデル比較評価
 │   ├── preprocess/                # 画像/OCR前処理
 │   │   └── ocr_center_window.py   # KDA/CS抽出用OCR
 │   ├── utils/                     # 共通ユーティリティ
@@ -71,7 +79,11 @@ pyLoL-v2/
 │   ├── 02_download_replays.ipynb  # Step2: .roflダウンロード
 │   ├── 03_filtering_replays.ipynb # Step3: フィルタリング
 │   ├── 04_run_client.ipynb        # Step4: リプレイ再生・データ抽出
-│   └── 05_ward_inference.ipynb    # Step5: ward検出推論
+│   ├── 05_ward_inference.ipynb    # Step5: ward検出推論（単体テスト用）
+│   ├── 06_ward_batch_processing.ipynb  # Step6: wardバッチ処理（GPUバッチ推論対応）
+│   ├── 06_ward_batch_processing_colab.ipynb  # Step6: Colab版（A100用、BATCH_SIZE=64）
+│   ├── 07_vision_score.ipynb      # Step7: 視界スコア特徴量・モデル学習
+│   └── 08_win_prediction.ipynb    # Step8: 勝敗予測モデル・視界スコア比較評価
 ├── scripts/                       # スタンドアロンスクリプト
 │   ├── batch_inference_wards.py   # バッチ推論＋クラスタリング
 │   ├── compare_matching_methods.py # 貪欲法vsハンガリアン法比較
@@ -89,6 +101,7 @@ pyLoL-v2/
 │   └── best.pt                    # YOLOv8 ward検出モデル v4
 ├── matchids/                      # 取得したmatchIdのCSV保存先
 ├── data/                          # 処理済みデータ保存先（gitignore対象）
+├── results/                       # 実験結果出力先
 ├── docs/                          # ドキュメント
 │   ├── ward_detection_planB.md    # Phase 2: ward検出Plan B仕様書
 │   ├── phase3_ward_coordinate_extraction.md  # Phase 3: ward座標抽出仕様書
@@ -115,6 +128,7 @@ pyLoL-v2/
 - **Python**: 3.7+ （.venv使用）
 - **OS**: Windows（LoLクライアントがWindows専用のため）
 - **必須ソフトウェア**: League of Legendsクライアント
+- **GPU**: NVIDIA GPU推奨（YOLO推論高速化）
 
 ```bash
 # セットアップ
@@ -122,6 +136,10 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 python setup.py develop
+
+# GPU使用時（PyTorch CUDA版）
+pip uninstall torch torchvision -y
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 ```
 
 
@@ -144,7 +162,9 @@ python setup.py develop
 2. **02_download_replays.ipynb** - .roflファイルダウンロード
 3. **03_filtering_replays.ipynb** - データフィルタリング
 4. **04_run_client.ipynb** - リプレイ再生・ミニマップ抽出
-5. **05_ward_inference.ipynb** - ward検出推論テスト
+5. **05_ward_inference.ipynb** - ward検出推論テスト（単体）
+6. **06_ward_batch_processing.ipynb** - wardバッチ処理（YOLO推論→クラスタリング→タイムライン統合）
+7. **07_vision_score.ipynb** - 視界スコア特徴量生成・モデル学習
 
 
 ## API/外部サービス
@@ -222,22 +242,49 @@ python setup.py develop
 - [ ] ミニマップからチャンピオンアイコン検出
 - [ ] 移動経路抽出・座標記録
 
-**Phase 5: 視界スコア指標** - 設計完了（2026-01-06）
+**Phase 5: 視界スコア指標** - 完了（2026-01-06）
 - 仕様書: `docs/phase5_vision_score.md`
 - アプローチ: グリッドベース特徴量 + 勝敗予測モデル
-- 実装タスク（並列実行可能）:
-  - [ ] Task A: グリッド特徴量生成 (`autoLeague/scoring/grid_generator.py`)
-  - [ ] Task B: データセット構築 (`autoLeague/scoring/dataset_builder.py`)
-  - [ ] Task C: 予測モデル学習 (`autoLeague/scoring/predictor.py`)
-  - [ ] Task D: ヒートマップ可視化 (`autoLeague/scoring/visualizer.py`)
-- 依存関係: A → B → C → D
+- 実装モジュール:
+  - `autoLeague/scoring/grid_generator.py` - グリッド特徴量生成
+  - `autoLeague/scoring/dataset_builder.py` - データセット構築
+  - `autoLeague/scoring/predictor.py` - VisionPredictor（ロジスティック回帰/CNN）
+  - `autoLeague/scoring/visualizer.py` - ヒートマップ可視化
+- スクリプト:
+  - `scripts/train_vision_model.py` - モデル学習CLI
+  - `scripts/visualize_vision_heatmap.py` - 可視化CLI
+- ノートブック:
+  - `notebooks/06_ward_batch_processing.ipynb` - GPUバッチ推論対応（約2倍高速化）
+  - `notebooks/07_vision_score.ipynb` - 特徴量生成・モデル学習
+- 学習結果（26試合データ）:
+  - ロジスティック回帰: Test Accuracy 83.3%
+  - CNN: Test Accuracy 66.7%（小規模データのため過学習）
+  - Phase 2（10-20分）の視界が最も重要と判明
+- GPUバッチ推論:
+  - BATCH_SIZE=8推奨（VRAM 4GB）、16（VRAM 8GB以上）
+  - 処理速度: 約2倍向上
 
-**Phase 6: 勝率予測モデル統合**
-- [ ] 既存勝率予測モデルの調査
-- [ ] 視界スコア特徴量の追加
+**Phase 6: 勝敗予測モデル・視界スコア比較評価** - 完了（2026-01-06）
+- 目的: Riot公式visionScoreと自作視界スコアの予測精度への貢献度を比較
+- 実装モジュール: `autoLeague/prediction/`
+  - `config.py` - 設定・定数
+  - `feature_extractor.py` - Timeline/Matchから10分/20分時点の特徴量抽出
+  - `baseline_predictor.py` - 勝敗予測モデル（ロジスティック回帰 + LOO-CV）
+  - `evaluator.py` - モデル比較・貢献度計算・可視化
+- ノートブック: `notebooks/08_win_prediction.ipynb`
+- 比較モデル:
+  - baseline: 標準特徴量（gold, kills, dragons等）20個
+  - baseline_riot: ベースライン + Riot visionScore推定値3個
+  - baseline_grid: ベースライン + 自作ward座標グリッド特徴量6個
+- 出力:
+  - `data/prediction_dataset.npz` - 構築済みデータセット
+  - `models/*.joblib` - 学習済みモデル
+  - `results/model_comparison.json` - 比較結果JSON
+  - `results/model_comparison.png` - 比較グラフ
 
 
 ## 開発ルール
+- yoloの学習、バッチ処理、容量が大きいもののpipinstallは人間に依頼すること
 - NotebookのコードセルにはCell番号コメントを記載
 - APIキーはRiotAPI.envファイルで管理
 - Windowsパスは Path(r"C:\...") 形式で記述

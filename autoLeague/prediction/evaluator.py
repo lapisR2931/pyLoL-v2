@@ -1,0 +1,413 @@
+"""
+Phase 6: モデル評価・比較モジュール
+
+視界スコアの貢献度を評価する。
+"""
+
+import json
+from pathlib import Path
+from typing import Dict, List, Optional, Union
+
+import numpy as np
+import pandas as pd
+
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    log_loss,
+    confusion_matrix,
+)
+
+
+# =============================================================================
+# モデル評価
+# =============================================================================
+
+def evaluate_model(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    y_proba: Optional[np.ndarray] = None,
+) -> Dict:
+    """
+    モデル評価
+
+    Args:
+        y_true: 正解ラベル (N,)
+        y_pred: 予測ラベル (N,)
+        y_proba: 予測確率 (N,) - オプション
+
+    Returns:
+        評価メトリクス辞書
+    """
+    metrics = {
+        "accuracy": float(accuracy_score(y_true, y_pred)),
+        "precision": float(precision_score(y_true, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_true, y_pred, zero_division=0)),
+        "f1": float(f1_score(y_true, y_pred, zero_division=0)),
+    }
+
+    # 混同行列
+    cm = confusion_matrix(y_true, y_pred)
+    metrics["confusion_matrix"] = cm.tolist()
+
+    # AUC, Log Loss（確率が与えられた場合）
+    if y_proba is not None:
+        try:
+            metrics["auc"] = float(roc_auc_score(y_true, y_proba))
+        except ValueError:
+            metrics["auc"] = 0.5
+
+        try:
+            metrics["log_loss"] = float(log_loss(y_true, y_proba))
+        except ValueError:
+            metrics["log_loss"] = float('inf')
+
+    return metrics
+
+
+# =============================================================================
+# モデル比較
+# =============================================================================
+
+def compare_models(results: Dict[str, Dict]) -> pd.DataFrame:
+    """
+    モデル比較表を生成
+
+    Args:
+        results: {model_name: metrics_dict} の辞書
+
+    Returns:
+        比較DataFrameの文字列表現
+    """
+    rows = []
+
+    for model_name, metrics in results.items():
+        row = {
+            "Model": model_name,
+            "CV Accuracy": metrics.get("cv_accuracy", metrics.get("accuracy", 0)),
+            "CV AUC": metrics.get("cv_auc", metrics.get("auc", 0)),
+            "CV LogLoss": metrics.get("cv_log_loss", metrics.get("log_loss", 0)),
+            "N Features": metrics.get("n_features", 0),
+        }
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    return df
+
+
+def calculate_contribution(
+    baseline_metrics: Dict,
+    extended_metrics: Dict,
+    metric_key: str = "cv_accuracy",
+) -> Dict:
+    """
+    視界スコアの貢献度を計算
+
+    貢献度 = (拡張モデル精度 - ベースライン精度) / (1 - ベースライン精度) * 100%
+
+    Args:
+        baseline_metrics: ベースラインモデルのメトリクス
+        extended_metrics: 拡張モデルのメトリクス
+        metric_key: 比較する指標キー
+
+    Returns:
+        貢献度情報
+    """
+    baseline_score = baseline_metrics.get(metric_key, 0)
+    extended_score = extended_metrics.get(metric_key, 0)
+
+    # 絶対的な向上
+    absolute_lift = extended_score - baseline_score
+
+    # 相対的な貢献度（改善余地に対する割合）
+    if baseline_score < 1.0:
+        relative_contribution = absolute_lift / (1.0 - baseline_score)
+    else:
+        relative_contribution = 0.0
+
+    return {
+        "baseline_score": baseline_score,
+        "extended_score": extended_score,
+        "absolute_lift": absolute_lift,
+        "absolute_lift_pct": absolute_lift * 100,
+        "relative_contribution": relative_contribution,
+        "relative_contribution_pct": relative_contribution * 100,
+        "metric": metric_key,
+    }
+
+
+def summarize_contributions(
+    results: Dict[str, Dict],
+    baseline_key: str = "baseline",
+) -> Dict[str, Dict]:
+    """
+    各拡張モデルの貢献度を計算
+
+    Args:
+        results: {model_name: metrics_dict} の辞書
+        baseline_key: ベースラインモデルのキー
+
+    Returns:
+        {extended_model_name: contribution_dict}
+    """
+    baseline_metrics = results.get(baseline_key, {})
+    contributions = {}
+
+    for model_name, metrics in results.items():
+        if model_name == baseline_key:
+            continue
+
+        contribution = calculate_contribution(baseline_metrics, metrics)
+        contribution["model_name"] = model_name
+        contributions[model_name] = contribution
+
+    return contributions
+
+
+# =============================================================================
+# レポート生成
+# =============================================================================
+
+def generate_report(
+    results_10min: Dict[str, Dict],
+    results_20min: Dict[str, Dict],
+    output_path: Optional[Path] = None,
+) -> str:
+    """
+    比較レポートを生成
+
+    Args:
+        results_10min: 10分時点の結果
+        results_20min: 20分時点の結果
+        output_path: JSON出力先パス（オプション）
+
+    Returns:
+        レポート文字列
+    """
+    lines = []
+    lines.append("=" * 60)
+    lines.append("Phase 6: 勝敗予測モデル比較レポート")
+    lines.append("=" * 60)
+
+    # 10分時点
+    lines.append("\n## 10分時点")
+    lines.append("-" * 40)
+
+    df_10 = compare_models(results_10min)
+    lines.append(df_10.to_string(index=False))
+
+    contributions_10 = summarize_contributions(results_10min)
+    lines.append("\n### 視界スコア貢献度 (10分)")
+    for model_name, contrib in contributions_10.items():
+        lines.append(f"  {model_name}:")
+        lines.append(f"    精度向上: {contrib['absolute_lift_pct']:.2f}%")
+        lines.append(f"    相対貢献度: {contrib['relative_contribution_pct']:.2f}%")
+
+    # 20分時点
+    lines.append("\n## 20分時点")
+    lines.append("-" * 40)
+
+    df_20 = compare_models(results_20min)
+    lines.append(df_20.to_string(index=False))
+
+    contributions_20 = summarize_contributions(results_20min)
+    lines.append("\n### 視界スコア貢献度 (20分)")
+    for model_name, contrib in contributions_20.items():
+        lines.append(f"  {model_name}:")
+        lines.append(f"    精度向上: {contrib['absolute_lift_pct']:.2f}%")
+        lines.append(f"    相対貢献度: {contrib['relative_contribution_pct']:.2f}%")
+
+    # 結論
+    lines.append("\n" + "=" * 60)
+    lines.append("## 結論")
+    lines.append("-" * 40)
+
+    # 最良モデルを特定
+    all_results = {
+        "10min": results_10min,
+        "20min": results_20min,
+    }
+
+    best_model = None
+    best_acc = 0
+    best_time = None
+
+    for time_name, time_results in all_results.items():
+        for model_name, metrics in time_results.items():
+            acc = metrics.get("cv_accuracy", 0)
+            if acc > best_acc:
+                best_acc = acc
+                best_model = model_name
+                best_time = time_name
+
+    if best_model:
+        lines.append(f"最高精度: {best_model} @ {best_time} (Accuracy: {best_acc:.3f})")
+
+    # Riot visionScore vs 自作視界スコアの比較
+    for time_name in ["10min", "20min"]:
+        time_results = all_results[time_name]
+        riot_acc = time_results.get("baseline_riot", {}).get("cv_accuracy", 0)
+        grid_acc = time_results.get("baseline_grid", {}).get("cv_accuracy", 0)
+
+        if riot_acc > 0 and grid_acc > 0:
+            winner = "Riot visionScore" if riot_acc > grid_acc else "自作視界スコア"
+            diff = abs(riot_acc - grid_acc)
+            lines.append(f"{time_name}: {winner} が {diff*100:.2f}% 優位")
+
+    report = "\n".join(lines)
+
+    # JSON出力
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        json_data = {
+            "10min": {
+                "results": results_10min,
+                "contributions": contributions_10,
+            },
+            "20min": {
+                "results": results_20min,
+                "contributions": contributions_20,
+            },
+        }
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(json_data, f, indent=2, ensure_ascii=False, default=str)
+
+        print(f"JSON保存: {output_path}")
+
+    return report
+
+
+# =============================================================================
+# 可視化
+# =============================================================================
+
+def visualize_comparison(
+    results_10min: Dict[str, Dict],
+    results_20min: Dict[str, Dict],
+    output_dir: Optional[Path] = None,
+) -> None:
+    """
+    モデル比較を可視化
+
+    Args:
+        results_10min: 10分時点の結果
+        results_20min: 20分時点の結果
+        output_dir: 画像出力先ディレクトリ
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib がインストールされていません。可視化をスキップします。")
+        return
+
+    # 日本語フォント設定
+    plt.rcParams['font.family'] = ['DejaVu Sans', 'sans-serif']
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    for idx, (time_name, results) in enumerate([("10min", results_10min), ("20min", results_20min)]):
+        ax = axes[idx]
+
+        model_names = list(results.keys())
+        accuracies = [results[m].get("cv_accuracy", 0) for m in model_names]
+        aucs = [results[m].get("cv_auc", 0) for m in model_names]
+
+        x = np.arange(len(model_names))
+        width = 0.35
+
+        bars1 = ax.bar(x - width/2, accuracies, width, label='Accuracy', color='steelblue')
+        bars2 = ax.bar(x + width/2, aucs, width, label='AUC', color='darkorange')
+
+        ax.set_xlabel('Model')
+        ax.set_ylabel('Score')
+        ax.set_title(f'Model Comparison @ {time_name}')
+        ax.set_xticks(x)
+        ax.set_xticklabels(model_names, rotation=15, ha='right')
+        ax.legend()
+        ax.set_ylim(0, 1.0)
+
+        # 値を表示
+        for bar in bars1:
+            height = bar.get_height()
+            ax.annotate(f'{height:.3f}',
+                       xy=(bar.get_x() + bar.get_width() / 2, height),
+                       xytext=(0, 3),
+                       textcoords="offset points",
+                       ha='center', va='bottom', fontsize=8)
+
+        for bar in bars2:
+            height = bar.get_height()
+            ax.annotate(f'{height:.3f}',
+                       xy=(bar.get_x() + bar.get_width() / 2, height),
+                       xytext=(0, 3),
+                       textcoords="offset points",
+                       ha='center', va='bottom', fontsize=8)
+
+    plt.tight_layout()
+
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / "model_comparison.png"
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"画像保存: {output_path}")
+
+    plt.show()
+
+
+def visualize_feature_importance(
+    results: Dict[str, Dict],
+    time_name: str,
+    output_dir: Optional[Path] = None,
+) -> None:
+    """
+    特徴量重要度を可視化
+
+    Args:
+        results: モデル結果
+        time_name: 時間帯名（"10min" or "20min"）
+        output_dir: 画像出力先ディレクトリ
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib がインストールされていません。可視化をスキップします。")
+        return
+
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+
+    for idx, (model_name, metrics) in enumerate(results.items()):
+        ax = axes[idx]
+
+        importance = metrics.get("feature_importance", [])
+        if not importance:
+            ax.set_title(f'{model_name} - No importance data')
+            continue
+
+        names = [item[0] for item in importance]
+        values = [item[1] for item in importance]
+
+        y_pos = np.arange(len(names))
+        ax.barh(y_pos, values, color='steelblue')
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(names, fontsize=8)
+        ax.invert_yaxis()
+        ax.set_xlabel('Importance (|coef|)')
+        ax.set_title(f'{model_name} @ {time_name}')
+
+    plt.tight_layout()
+
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"feature_importance_{time_name}.png"
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"画像保存: {output_path}")
+
+    plt.show()

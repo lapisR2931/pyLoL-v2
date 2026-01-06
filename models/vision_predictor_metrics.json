@@ -1,13 +1,9 @@
 {
-  "train_accuracy": 1.0,
-  "regularization_C": 0.1,
-  "training_time_sec": 0.01,
-  "model_type": "logistic",
-  "n_samples": 20,
-  "test_accuracy": 0.8333333333333334,
-  "test_precision": 1.0,
-  "test_recall": 0.6666666666666666,
-  "test_f1": 0.8,
-  "n_samples_train": 20,
-  "n_samples_test": 6
+  "model_type": "cnn",
+  "n_samples_train": 98,
+  "n_samples_test": 25,
+  "test_accuracy": 0.68,
+  "test_precision": 0.6428571428571429,
+  "test_recall": 0.75,
+  "test_f1": 0.6923076923076923
 }
