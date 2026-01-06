@@ -205,6 +205,9 @@ def visualize_importance_grid(
 
     fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
 
+    # カラーバー用のスペースを確保
+    fig.subplots_adjust(right=0.88, wspace=0.25)
+
     for phase_idx, ax in enumerate(axes):
         phase_importance = importance[phase_idx]
 
@@ -227,11 +230,11 @@ def visualize_importance_grid(
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
 
-    # 共通カラーバー
-    fig.colorbar(im, ax=axes, shrink=0.6, label="Importance (+: Blue, -: Red)")
+    # 共通カラーバー（右端に配置）
+    cbar_ax = fig.add_axes([0.90, 0.15, 0.02, 0.7])
+    fig.colorbar(im, cax=cbar_ax, label="Importance (+: Blue, -: Red)")
 
     plt.suptitle("Ward Vision Importance by Time Phase", fontsize=14, fontweight='bold')
-    plt.tight_layout()
 
     plt.savefig(output_path, dpi=dpi, bbox_inches='tight')
     plt.close(fig)

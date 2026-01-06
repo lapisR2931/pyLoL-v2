@@ -1,9 +1,9 @@
 {
-  "model_type": "cnn",
+  "model_type": "logistic",
   "n_samples_train": 98,
   "n_samples_test": 25,
-  "test_accuracy": 0.68,
-  "test_precision": 0.6428571428571429,
+  "test_accuracy": 0.64,
+  "test_precision": 0.6,
   "test_recall": 0.75,
-  "test_f1": 0.6923076923076923
+  "test_f1": 0.6666666666666666
 }
