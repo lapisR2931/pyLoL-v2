@@ -30,6 +30,7 @@ class WinPredictor:
     - "baseline": ベースライン特徴量のみ
     - "baseline_riot": ベースライン + Riot visionScore推定値
     - "baseline_grid": ベースライン + 自作視界スコア（グリッド→スカラー）
+    - "baseline_tactical": ベースライン + 戦術スコア（6特徴量）
 
     使用例:
         predictor = WinPredictor(feature_set="baseline")
@@ -37,13 +38,15 @@ class WinPredictor:
         y_pred = predictor.predict(X_baseline_test)
     """
 
+    VALID_FEATURE_SETS = ("baseline", "baseline_riot", "baseline_grid", "baseline_tactical")
+
     def __init__(self, feature_set: str = "baseline"):
         """
         Args:
-            feature_set: 特徴量セット（"baseline", "baseline_riot", "baseline_grid"）
+            feature_set: 特徴量セット（"baseline", "baseline_riot", "baseline_grid", "baseline_tactical"）
         """
-        if feature_set not in ("baseline", "baseline_riot", "baseline_grid"):
-            raise ValueError(f"feature_set must be 'baseline', 'baseline_riot', or 'baseline_grid', got {feature_set}")
+        if feature_set not in self.VALID_FEATURE_SETS:
+            raise ValueError(f"feature_set must be one of {self.VALID_FEATURE_SETS}, got {feature_set}")
 
         self.feature_set = feature_set
         self.model = None
@@ -373,6 +376,21 @@ def prepare_features(
             "grid_blue_total", "grid_red_total", "grid_total_diff",
         ]
 
+    elif feature_set == "baseline_tactical":
+        # 戦術スコア特徴量を追加
+        if "X_tactical" not in dataset:
+            raise ValueError("X_tactical not found in dataset. Rebuild dataset with tactical scores.")
+
+        X_tactical = dataset["X_tactical"][:, time_index, :]  # (N, 6)
+        tactical_features = dataset.get("tactical_features", [
+            "blue_placement_score", "red_placement_score",
+            "blue_deny_score", "red_deny_score",
+            "placement_score_diff", "deny_score_diff",
+        ])
+
+        X = np.concatenate([X_baseline, X_tactical], axis=1)
+        feature_names = list(baseline_features) + list(tactical_features)
+
     else:
         raise ValueError(f"Unknown feature_set: {feature_set}")
 
@@ -385,6 +403,7 @@ def train_all_models(
     output_dir: Optional[Path] = None,
     vision_predictor=None,
     verbose: bool = True,
+    include_tactical: bool = True,
 ) -> Dict[str, Dict]:
     """
     全モデルを学習
@@ -395,18 +414,24 @@ def train_all_models(
         output_dir: モデル保存先ディレクトリ
         vision_predictor: Phase 5のVisionPredictor
         verbose: 進捗表示
+        include_tactical: baseline_tacticalを含めるか
 
     Returns:
         {
             "baseline": {"cv_accuracy": float, ...},
             "baseline_riot": {...},
             "baseline_grid": {...},
+            "baseline_tactical": {...},
         }
     """
     y = dataset["y"]
     results = {}
 
-    for feature_set in ["baseline", "baseline_riot", "baseline_grid"]:
+    feature_sets = ["baseline", "baseline_riot", "baseline_grid"]
+    if include_tactical and "X_tactical" in dataset:
+        feature_sets.append("baseline_tactical")
+
+    for feature_set in feature_sets:
         X, feature_names = prepare_features(
             dataset, time_index, feature_set, vision_predictor
         )

@@ -1,0 +1,239 @@
+{
+  "dataset_info": {
+    "n_samples": 92,
+    "blue_wins": 45,
+    "red_wins": 47,
+    "times_ms": [
+      600000,
+      1200000
+    ]
+  },
+  "10min": {
+    "baseline": {
+      "cv_accuracy": 0.5978260869565217,
+      "cv_auc": 0.6477541371158392,
+      "cv_log_loss": 0.6658318326229375,
+      "n_features": 20,
+      "feature_importance_top5": [
+        [
+          "red_dragons",
+          0.3696235305725706
+        ],
+        [
+          "blue_dragons",
+          0.2637450196743549
+        ],
+        [
+          "red_total_cs",
+          0.17725457337570458
+        ],
+        [
+          "red_towers",
+          0.17517155453409716
+        ],
+        [
+          "kill_diff",
+          0.1526343083252979
+        ]
+      ]
+    },
+    "baseline_riot": {
+      "cv_accuracy": 0.6847826086956522,
+      "cv_auc": 0.7101654846335698,
+      "cv_log_loss": 0.635580082740436,
+      "n_features": 23,
+      "feature_importance_top5": [
+        [
+          "red_dragons",
+          0.34929377949451085
+        ],
+        [
+          "red_vision_score_est",
+          0.3284319230672811
+        ],
+        [
+          "vision_score_diff",
+          0.27830544081032016
+        ],
+        [
+          "blue_dragons",
+          0.21454216595927242
+        ],
+        [
+          "red_total_cs",
+          0.17335768766595305
+        ]
+      ]
+    },
+    "baseline_grid": {
+      "cv_accuracy": 0.5978260869565217,
+      "cv_auc": 0.6482269503546099,
+      "cv_log_loss": 0.6746133102256809,
+      "n_features": 26,
+      "feature_importance_top5": [
+        [
+          "red_dragons",
+          0.37082497150927574
+        ],
+        [
+          "grid_blue_total",
+          0.2316536760425273
+        ],
+        [
+          "blue_dragons",
+          0.22595932850025907
+        ],
+        [
+          "red_total_cs",
+          0.16972679323213155
+        ],
+        [
+          "red_towers",
+          0.16945822904497937
+        ]
+      ]
+    },
+    "baseline_tactical": {
+      "cv_accuracy": 0.7717391304347826,
+      "cv_auc": 0.825531914893617,
+      "cv_log_loss": 0.518821778527204,
+      "n_features": 26,
+      "feature_importance_top5": [
+        [
+          "red_placement_score",
+          0.6761436931885996
+        ],
+        [
+          "blue_placement_score",
+          0.36559819201389854
+        ],
+        [
+          "red_dragons",
+          0.27631176736241936
+        ],
+        [
+          "red_total_cs",
+          0.26058505549727917
+        ],
+        [
+          "blue_deny_score",
+          0.25860159048261144
+        ]
+      ]
+    }
+  },
+  "20min": {
+    "baseline": {
+      "cv_accuracy": 0.8043478260869565,
+      "cv_auc": 0.9011820330969267,
+      "cv_log_loss": 0.4009587641595462,
+      "n_features": 20,
+      "feature_importance_top5": [
+        [
+          "blue_avg_level",
+          0.32277828191483304
+        ],
+        [
+          "red_avg_level",
+          0.3035144642841413
+        ],
+        [
+          "red_total_gold",
+          0.30293607173855847
+        ],
+        [
+          "red_dragons",
+          0.23775470930416018
+        ],
+        [
+          "blue_total_xp",
+          0.2371777986559687
+        ]
+      ]
+    },
+    "baseline_riot": {
+      "cv_accuracy": 0.8478260869565217,
+      "cv_auc": 0.9073286052009457,
+      "cv_log_loss": 0.3857407646149594,
+      "n_features": 23,
+      "feature_importance_top5": [
+        [
+          "red_avg_level",
+          0.31763910788661764
+        ],
+        [
+          "red_total_gold",
+          0.3140146082191454
+        ],
+        [
+          "red_vision_score_est",
+          0.3083827413984805
+        ],
+        [
+          "blue_avg_level",
+          0.2960208991584708
+        ],
+        [
+          "blue_total_xp",
+          0.23429769658228403
+        ]
+      ]
+    },
+    "baseline_grid": {
+      "cv_accuracy": 0.8043478260869565,
+      "cv_auc": 0.8836879432624114,
+      "cv_log_loss": 0.42000123984619697,
+      "n_features": 26,
+      "feature_importance_top5": [
+        [
+          "blue_avg_level",
+          0.3125788554409967
+        ],
+        [
+          "red_total_gold",
+          0.30521606709747157
+        ],
+        [
+          "red_avg_level",
+          0.30422734099006987
+        ],
+        [
+          "blue_total_xp",
+          0.2370322542448319
+        ],
+        [
+          "red_dragons",
+          0.23296945149590562
+        ]
+      ]
+    },
+    "baseline_tactical": {
+      "cv_accuracy": 0.8804347826086957,
+      "cv_auc": 0.9446808510638298,
+      "cv_log_loss": 0.31967131495762346,
+      "n_features": 26,
+      "feature_importance_top5": [
+        [
+          "red_placement_score",
+          0.5921714736591336
+        ],
+        [
+          "blue_placement_score",
+          0.4118330067527253
+        ],
+        [
+          "blue_avg_level",
+          0.29490432260465366
+        ],
+        [
+          "red_avg_level",
+          0.28190052270986726
+        ],
+        [
+          "red_total_gold",
+          0.24567555205162836
+        ]
+      ]
+    }
+  }
+}

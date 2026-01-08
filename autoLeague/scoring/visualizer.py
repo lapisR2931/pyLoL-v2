@@ -24,13 +24,17 @@ from matplotlib.patches import Rectangle
 
 # グリッド設定
 GRID_SIZE = 32
-N_TIME_PHASES = 3
+N_TIME_PHASES = 7
 
-# 時間帯ラベル
+# 時間帯ラベル（5分刻み）
 TIME_PHASE_LABELS = [
-    "Phase 1: 0-10min (Early)",
-    "Phase 2: 10-20min (Mid)",
-    "Phase 3: 20min+ (Late)",
+    "0-5min",
+    "5-10min",
+    "10-15min",
+    "15-20min",
+    "20-25min",
+    "25-30min",
+    "30min+",
 ]
 
 # ミニマップサイズ（元画像）
@@ -97,7 +101,7 @@ def visualize_importance_heatmap(
 
         # 背景画像
         if bg_image is not None:
-            ax.imshow(bg_image, extent=[0, GRID_SIZE, GRID_SIZE, 0], alpha=0.3)
+            ax.imshow(bg_image, extent=[0, GRID_SIZE, GRID_SIZE, 0], alpha=0.5)
 
         # ヒートマップ
         im = ax.imshow(
@@ -106,7 +110,7 @@ def visualize_importance_heatmap(
             vmin=vmin,
             vmax=vmax,
             extent=[0, GRID_SIZE, GRID_SIZE, 0],
-            alpha=0.8 if bg_image is not None else 1.0,
+            alpha=0.6 if bg_image is not None else 1.0,
         )
 
         # グリッド線
@@ -138,7 +142,7 @@ def visualize_importance_heatmap(
     fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
     if bg_image is not None:
-        ax.imshow(bg_image, extent=[0, GRID_SIZE, GRID_SIZE, 0], alpha=0.3)
+        ax.imshow(bg_image, extent=[0, GRID_SIZE, GRID_SIZE, 0], alpha=0.5)
 
     im = ax.imshow(
         combined_importance,
@@ -146,7 +150,7 @@ def visualize_importance_heatmap(
         vmin=vmin,
         vmax=vmax,
         extent=[0, GRID_SIZE, GRID_SIZE, 0],
-        alpha=0.8 if bg_image is not None else 1.0,
+        alpha=0.6 if bg_image is not None else 1.0,
     )
 
     ax.set_xticks(np.arange(0, GRID_SIZE + 1, 8))
@@ -175,14 +179,14 @@ def visualize_importance_grid(
     importance: np.ndarray,
     output_path: Union[str, Path],
     minimap_bg: Optional[Union[str, Path]] = None,
-    figsize: Tuple[int, int] = (16, 5),
+    figsize: Tuple[int, int] = (20, 10),
     dpi: int = 150,
 ) -> Path:
     """
-    全時間帯を1枚の画像に並べて表示
+    全時間帯を1枚の画像に並べて表示（2行4列レイアウト）
 
     Args:
-        importance: 重要度配列 (3, 32, 32)
+        importance: 重要度配列 (N_TIME_PHASES, 32, 32)
         output_path: 出力ファイルパス
         minimap_bg: ミニマップ背景画像パス
         figsize: 図サイズ
@@ -203,16 +207,20 @@ def visualize_importance_grid(
     vmax = max(abs(importance.min()), abs(importance.max()))
     vmin = -vmax
 
-    fig, axes = plt.subplots(1, 3, figsize=figsize, dpi=dpi)
+    # 2行4列レイアウト（7つの時間帯 + 1つ空）
+    n_rows, n_cols = 2, 4
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize, dpi=dpi)
+    axes = axes.flatten()
 
     # カラーバー用のスペースを確保
-    fig.subplots_adjust(right=0.88, wspace=0.25)
+    fig.subplots_adjust(right=0.92, wspace=0.2, hspace=0.25)
 
-    for phase_idx, ax in enumerate(axes):
+    for phase_idx in range(N_TIME_PHASES):
+        ax = axes[phase_idx]
         phase_importance = importance[phase_idx]
 
         if bg_image is not None:
-            ax.imshow(bg_image, extent=[0, GRID_SIZE, GRID_SIZE, 0], alpha=0.3)
+            ax.imshow(bg_image, extent=[0, GRID_SIZE, GRID_SIZE, 0], alpha=0.5)
 
         im = ax.imshow(
             phase_importance,
@@ -220,7 +228,7 @@ def visualize_importance_grid(
             vmin=vmin,
             vmax=vmax,
             extent=[0, GRID_SIZE, GRID_SIZE, 0],
-            alpha=0.8 if bg_image is not None else 1.0,
+            alpha=0.6 if bg_image is not None else 1.0,
         )
 
         ax.set_xticks(np.arange(0, GRID_SIZE + 1, 8))
@@ -230,11 +238,15 @@ def visualize_importance_grid(
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
 
+    # 余った軸を非表示
+    for idx in range(N_TIME_PHASES, n_rows * n_cols):
+        axes[idx].axis('off')
+
     # 共通カラーバー（右端に配置）
-    cbar_ax = fig.add_axes([0.90, 0.15, 0.02, 0.7])
+    cbar_ax = fig.add_axes([0.94, 0.15, 0.015, 0.7])
     fig.colorbar(im, cax=cbar_ax, label="Importance (+: Blue, -: Red)")
 
-    plt.suptitle("Ward Vision Importance by Time Phase", fontsize=14, fontweight='bold')
+    plt.suptitle("Ward Vision Importance by Time Phase (5min intervals)", fontsize=14, fontweight='bold')
 
     plt.savefig(output_path, dpi=dpi, bbox_inches='tight')
     plt.close(fig)

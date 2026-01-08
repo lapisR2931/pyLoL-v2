@@ -1,9 +1,9 @@
 {
   "model_type": "logistic",
-  "n_samples_train": 98,
-  "n_samples_test": 25,
-  "test_accuracy": 0.64,
-  "test_precision": 0.6,
-  "test_recall": 0.75,
-  "test_f1": 0.6666666666666666
+  "n_samples_train": 130,
+  "n_samples_test": 33,
+  "test_accuracy": 0.7575757575757576,
+  "test_precision": 0.7222222222222222,
+  "test_recall": 0.8125,
+  "test_f1": 0.7647058823529411
 }

@@ -9,7 +9,7 @@
 
 出力:
     - vision_dataset.npz
-        - X: (N, 2, 3, 32, 32) - N試合, [blue,red], 3時間帯, 32x32グリッド
+        - X: (N, 2, 7, 32, 32) - N試合, [blue,red], 7時間帯(5分刻み), 32x32グリッド
         - y: (N,) - 勝敗ラベル (1=Blue勝利, 0=Red勝利)
         - match_ids: list - 試合IDリスト
 """
@@ -30,7 +30,7 @@ import requests
 # =============================================================================
 
 GRID_SIZE = 32
-NUM_PHASES = 3
+NUM_PHASES = 7  # 5分刻み: 0-5, 5-10, 10-15, 15-20, 20-25, 25-30, 30+
 DEFAULT_ROUTING = "asia"
 DEFAULT_REGION_PREFIX = "JP1_"
 MAX_RETRIES = 5
@@ -282,7 +282,7 @@ class DatasetBuilder:
 
         print()
         print(f"データセット形状:")
-        print(f"  X: {X.shape} (N, 2チーム, 3時間帯, 32x32)")
+        print(f"  X: {X.shape} (N, 2チーム, {NUM_PHASES}時間帯, 32x32)")
         print(f"  y: {y.shape} (Blue勝利={np.sum(y)}, Red勝利={len(y) - np.sum(y)})")
 
         if dry_run:
@@ -444,7 +444,7 @@ def load_dataset(dataset_path: Path) -> Tuple[np.ndarray, np.ndarray, List[str]]
 
     Returns:
         (X, y, match_ids)
-        - X: (N, 2, 3, 32, 32)
+        - X: (N, 2, 7, 32, 32) - 7時間帯(5分刻み)
         - y: (N,)
         - match_ids: list of str
     """

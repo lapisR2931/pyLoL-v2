@@ -58,6 +58,16 @@ RIOT_VISION_FEATURES: List[str] = [
     "vision_score_diff",
 ]
 
+# 戦術スコア特徴量（6個）
+TACTICAL_SCORE_FEATURES: List[str] = [
+    "blue_placement_score",
+    "red_placement_score",
+    "blue_deny_score",
+    "red_deny_score",
+    "placement_score_diff",
+    "deny_score_diff",
+]
+
 # =============================================================================
 # Timeline構造
 # =============================================================================

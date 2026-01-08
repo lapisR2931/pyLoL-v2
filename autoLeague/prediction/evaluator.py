@@ -246,16 +246,24 @@ def generate_report(
     if best_model:
         lines.append(f"最高精度: {best_model} @ {best_time} (Accuracy: {best_acc:.3f})")
 
-    # Riot visionScore vs 自作視界スコアの比較
+    # モデル比較（baseline以外）
     for time_name in ["10min", "20min"]:
         time_results = all_results[time_name]
-        riot_acc = time_results.get("baseline_riot", {}).get("cv_accuracy", 0)
-        grid_acc = time_results.get("baseline_grid", {}).get("cv_accuracy", 0)
+        baseline_acc = time_results.get("baseline", {}).get("cv_accuracy", 0)
 
-        if riot_acc > 0 and grid_acc > 0:
-            winner = "Riot visionScore" if riot_acc > grid_acc else "自作視界スコア"
-            diff = abs(riot_acc - grid_acc)
-            lines.append(f"{time_name}: {winner} が {diff*100:.2f}% 優位")
+        # 各モデルの精度向上を計算
+        model_lifts = []
+        for model_name in ["baseline_riot", "baseline_grid", "baseline_tactical"]:
+            if model_name in time_results:
+                acc = time_results[model_name].get("cv_accuracy", 0)
+                lift = (acc - baseline_acc) * 100
+                model_lifts.append((model_name, acc, lift))
+
+        if model_lifts:
+            # 最も精度向上が大きいモデルを特定
+            model_lifts.sort(key=lambda x: x[2], reverse=True)
+            best_model, best_acc, best_lift = model_lifts[0]
+            lines.append(f"{time_name}: {best_model} が +{best_lift:.2f}% で最良")
 
     report = "\n".join(lines)
 
@@ -380,7 +388,17 @@ def visualize_feature_importance(
         print("matplotlib がインストールされていません。可視化をスキップします。")
         return
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    n_models = len(results)
+    n_cols = min(n_models, 4)  # 最大4列
+    n_rows = (n_models + n_cols - 1) // n_cols
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 6 * n_rows))
+
+    # axesを1次元配列に統一
+    if n_models == 1:
+        axes = [axes]
+    else:
+        axes = np.array(axes).flatten()
 
     for idx, (model_name, metrics) in enumerate(results.items()):
         ax = axes[idx]
@@ -400,6 +418,10 @@ def visualize_feature_importance(
         ax.invert_yaxis()
         ax.set_xlabel('Importance (|coef|)')
         ax.set_title(f'{model_name} @ {time_name}')
+
+    # 余った軸を非表示
+    for idx in range(n_models, len(axes)):
+        axes[idx].axis('off')
 
     plt.tight_layout()
 

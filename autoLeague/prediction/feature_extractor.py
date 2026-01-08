@@ -15,6 +15,7 @@ from .config import (
     PREDICTION_TIMES_MS,
     BASELINE_FEATURES,
     RIOT_VISION_FEATURES,
+    TACTICAL_SCORE_FEATURES,
     BLUE_PARTICIPANT_IDS,
     RED_PARTICIPANT_IDS,
     BLUE_TEAM_ID,
@@ -406,6 +407,92 @@ class WardGridExtractor:
 
 
 # =============================================================================
+# Ward Tactical Score Extractor
+# =============================================================================
+
+class WardTacticalScoreExtractor:
+    """
+    指定時刻までの戦術スコアを抽出
+
+    ward_tactical_scores.csvから累積スコアを計算する。
+    """
+
+    def __init__(self, tactical_scores_csv_path: Path):
+        """
+        Args:
+            tactical_scores_csv_path: ward_tactical_scores.csvのパス
+        """
+        self.tactical_scores_csv_path = Path(tactical_scores_csv_path)
+        self.scores = self._load_scores()
+
+    def _load_scores(self) -> List[dict]:
+        """CSVから戦術スコア情報を読み込み"""
+        scores = []
+
+        if not self.tactical_scores_csv_path.exists():
+            return scores
+
+        with open(self.tactical_scores_csv_path, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                try:
+                    score = {
+                        'ward_id': row.get('ward_id', ''),
+                        'team': row.get('team', ''),
+                        'timestamp_placed': int(float(row.get('timestamp_placed', 0))),
+                        'timestamp_killed': int(float(row['timestamp_killed'])) if row.get('timestamp_killed') else None,
+                        'placement_score': int(row.get('placement_score', 0)),
+                        'deny_score': int(row.get('deny_score', 0)),
+                        'deny_team': row.get('deny_team', ''),
+                    }
+                    if score['team'] in ('blue', 'red'):
+                        scores.append(score)
+                except (ValueError, KeyError):
+                    continue
+
+        return scores
+
+    def extract_at_time(self, time_ms: int) -> Dict[str, float]:
+        """
+        指定時刻までの累積戦術スコアを抽出
+
+        Args:
+            time_ms: 時刻（ミリ秒）
+
+        Returns:
+            6特徴量の辞書
+        """
+        blue_placement = 0
+        red_placement = 0
+        blue_deny = 0
+        red_deny = 0
+
+        for score in self.scores:
+            # 設置スコア: 設置時刻が指定時刻以前のwardを集計
+            if score['timestamp_placed'] <= time_ms:
+                if score['team'] == 'blue':
+                    blue_placement += score['placement_score']
+                elif score['team'] == 'red':
+                    red_placement += score['placement_score']
+
+            # 破壊スコア: 破壊時刻が指定時刻以前のwardを集計
+            if score['timestamp_killed'] is not None and score['timestamp_killed'] <= time_ms:
+                if score['deny_team'] == 'blue':
+                    blue_deny += score['deny_score']
+                elif score['deny_team'] == 'red':
+                    red_deny += score['deny_score']
+
+        return {
+            "blue_placement_score": float(blue_placement),
+            "red_placement_score": float(red_placement),
+            "blue_deny_score": float(blue_deny),
+            "red_deny_score": float(red_deny),
+            "placement_score_diff": float(blue_placement - red_placement),
+            "deny_score_diff": float(blue_deny - red_deny),
+        }
+
+
+# =============================================================================
 # データセット構築
 # =============================================================================
 
@@ -445,6 +532,7 @@ def build_prediction_dataset(
     # 結果格納用
     all_baseline_features = []
     all_riot_vision_features = []
+    all_tactical_features = []
     all_ward_grids = []
     all_labels = []
     all_match_ids = []
@@ -458,6 +546,7 @@ def build_prediction_dataset(
         # wards_matched.csvのパス（例: C:/dataset_20260105/JP1-555621265/wards_matched.csv）
         match_id_dash = match_id.replace("_", "-")
         wards_csv_path = dataset_dir / match_id_dash / "wards_matched.csv"
+        tactical_csv_path = dataset_dir / match_id_dash / "ward_tactical_scores.csv"
 
         # 必要なファイルが揃っているか確認
         if not timeline_file.exists():
@@ -472,10 +561,17 @@ def build_prediction_dataset(
             n_skipped += 1
             continue
 
+        if not tactical_csv_path.exists():
+            if verbose:
+                print(f"スキップ: {match_id} (ward_tactical_scores.csv なし)")
+            n_skipped += 1
+            continue
+
         try:
             # 特徴量抽出器を初期化
             extractor = TimelineFeatureExtractor(timeline_file, match_file)
             ward_extractor = WardGridExtractor(wards_csv_path)
+            tactical_extractor = WardTacticalScoreExtractor(tactical_csv_path)
 
             # 試合が指定時刻より短い場合はスキップ
             if extractor.game_duration_ms < max(times_ms):
@@ -487,6 +583,7 @@ def build_prediction_dataset(
             # 各時点の特徴量を抽出
             baseline_per_time = []
             riot_vision_per_time = []
+            tactical_per_time = []
             ward_grid_per_time = []
 
             for time_ms in times_ms:
@@ -500,6 +597,11 @@ def build_prediction_dataset(
                 riot_vision_vec = [riot_vision[f] for f in RIOT_VISION_FEATURES]
                 riot_vision_per_time.append(riot_vision_vec)
 
+                # 戦術スコア
+                tactical = tactical_extractor.extract_at_time(time_ms)
+                tactical_vec = [tactical[f] for f in TACTICAL_SCORE_FEATURES]
+                tactical_per_time.append(tactical_vec)
+
                 # Ward grid
                 ward_grid = ward_extractor.extract_at_time(time_ms)
                 ward_grid_per_time.append(ward_grid)
@@ -511,6 +613,7 @@ def build_prediction_dataset(
             # 結果に追加
             all_baseline_features.append(baseline_per_time)
             all_riot_vision_features.append(riot_vision_per_time)
+            all_tactical_features.append(tactical_per_time)
             all_ward_grids.append(ward_grid_per_time)
             all_labels.append(label)
             all_match_ids.append(match_id)
@@ -533,6 +636,7 @@ def build_prediction_dataset(
 
     X_baseline = np.array(all_baseline_features, dtype=np.float32)  # (N, T, F_base)
     X_riot_vision = np.array(all_riot_vision_features, dtype=np.float32)  # (N, T, 3)
+    X_tactical = np.array(all_tactical_features, dtype=np.float32)  # (N, T, 6)
     X_ward_grid = np.array(all_ward_grids, dtype=np.float32)  # (N, T, 2, 32, 32)
     y = np.array(all_labels, dtype=np.int32)  # (N,)
 
@@ -542,12 +646,14 @@ def build_prediction_dataset(
         output_path,
         X_baseline=X_baseline,
         X_riot_vision=X_riot_vision,
+        X_tactical=X_tactical,
         X_ward_grid=X_ward_grid,
         y=y,
         match_ids=all_match_ids,
         times_ms=times_ms,
         baseline_features=BASELINE_FEATURES,
         riot_vision_features=RIOT_VISION_FEATURES,
+        tactical_features=TACTICAL_SCORE_FEATURES,
     )
 
     stats = {
@@ -556,6 +662,7 @@ def build_prediction_dataset(
         "n_times": n_times,
         "n_baseline_features": len(BASELINE_FEATURES),
         "n_riot_vision_features": len(RIOT_VISION_FEATURES),
+        "n_tactical_features": len(TACTICAL_SCORE_FEATURES),
         "blue_wins": int(y.sum()),
         "red_wins": int(n_samples - y.sum()),
         "output_path": str(output_path),
@@ -584,7 +691,7 @@ def load_prediction_dataset(path: Path) -> Dict:
     path = Path(path)
     data = np.load(path, allow_pickle=True)
 
-    return {
+    result = {
         "X_baseline": data["X_baseline"],
         "X_riot_vision": data["X_riot_vision"],
         "X_ward_grid": data["X_ward_grid"],
@@ -594,6 +701,13 @@ def load_prediction_dataset(path: Path) -> Dict:
         "baseline_features": data["baseline_features"].tolist(),
         "riot_vision_features": data["riot_vision_features"].tolist(),
     }
+
+    # 戦術スコア特徴量（後方互換性のためオプション）
+    if "X_tactical" in data:
+        result["X_tactical"] = data["X_tactical"]
+        result["tactical_features"] = data["tactical_features"].tolist()
+
+    return result
 
 
 # =============================================================================

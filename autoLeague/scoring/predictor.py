@@ -6,12 +6,12 @@
 - 浅いCNN（発展版）
 
 入力形式:
-    X: (N, 2, 3, 32, 32) - N試合, 2チーム(Blue/Red), 3時間帯, 32x32グリッド
+    X: (N, 2, 7, 32, 32) - N試合, 2チーム(Blue/Red), 7時間帯(5分刻み), 32x32グリッド
     y: (N,) - 勝敗ラベル (1=Blue勝利, 0=Red勝利)
 
 出力:
     - 予測ラベル
-    - 特徴量重要度 (3, 32, 32)
+    - 特徴量重要度 (7, 32, 32)
 """
 
 import json
@@ -41,8 +41,8 @@ from torch.utils.data import DataLoader, TensorDataset
 # グリッド設定
 GRID_SIZE = 32
 N_TEAMS = 2
-N_TIME_PHASES = 3
-FEATURE_DIM = N_TEAMS * N_TIME_PHASES * GRID_SIZE * GRID_SIZE  # 6144
+N_TIME_PHASES = 7  # 5分刻み: 0-5, 5-10, 10-15, 15-20, 20-25, 25-30, 30+
+FEATURE_DIM = N_TEAMS * N_TIME_PHASES * GRID_SIZE * GRID_SIZE  # 14336
 
 # ロジスティック回帰設定
 LOGISTIC_C = 0.1  # 正則化強度（小さいほど強い正則化）
@@ -72,9 +72,10 @@ class ShallowCNN(nn.Module):
     def __init__(self, dropout: float = 0.5):
         super().__init__()
 
-        # 入力: (N, 6, 32, 32) - 2チーム x 3時間帯 を結合
+        # 入力: (N, 14, 32, 32) - 2チーム x 7時間帯 を結合
+        n_input_channels = N_TEAMS * N_TIME_PHASES  # 14
         self.features = nn.Sequential(
-            nn.Conv2d(6, 16, kernel_size=3, padding=1),
+            nn.Conv2d(n_input_channels, 16, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
             nn.BatchNorm2d(16),
             nn.Dropout2d(dropout * 0.5),
@@ -113,9 +114,7 @@ class ShallowCNN(nn.Module):
         # 特徴抽出
         feat = self.features(x)
 
-        # Grad-CAM用に活性化を保存
-        if feat.requires_grad:
-            h = feat.register_hook(self.activations_hook)
+        # Grad-CAM用に活性化を保存（推論時のみ、フックは外部で管理）
         self.activations = feat
 
         # 分類
