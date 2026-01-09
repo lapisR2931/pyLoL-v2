@@ -15,7 +15,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import LeaveOneOut, cross_val_predict
 from sklearn.metrics import accuracy_score, roc_auc_score, log_loss
 
-from .config import LOGISTIC_C, LOGISTIC_MAX_ITER
+import lightgbm as lgb
+
+from .config import LOGISTIC_C, LOGISTIC_MAX_ITER, LGBM_PARAMS
 
 
 # =============================================================================
@@ -304,6 +306,151 @@ class WinPredictor:
 
 
 # =============================================================================
+# LightGBM勝敗予測モデル
+# =============================================================================
+
+class WinPredictorLGBM:
+    """
+    LightGBMベースの勝敗予測モデル
+    """
+
+    VALID_FEATURE_SETS = ("baseline", "baseline_riot", "baseline_grid", "baseline_tactical")
+
+    def __init__(self, feature_set: str = "baseline"):
+        if feature_set not in self.VALID_FEATURE_SETS:
+            raise ValueError(f"feature_set must be one of {self.VALID_FEATURE_SETS}, got {feature_set}")
+
+        self.feature_set = feature_set
+        self.model = None
+        self.scaler = None
+        self._is_fitted = False
+        self._train_metrics = {}
+        self._feature_names = []
+
+    def fit_with_cv(
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        feature_names: Optional[List[str]] = None,
+        verbose: bool = True,
+    ) -> Dict:
+        """
+        Leave-One-Out交差検証で学習・評価
+        """
+        if feature_names is not None:
+            self._feature_names = feature_names
+
+        # 正規化（LightGBMは不要だが一貫性のため）
+        self.scaler = StandardScaler()
+        X_scaled = self.scaler.fit_transform(X)
+
+        # LOO交差検証
+        loo = LeaveOneOut()
+        y_pred_cv = []
+        y_proba_cv = []
+
+        for train_idx, test_idx in loo.split(X_scaled):
+            X_train, X_test = X_scaled[train_idx], X_scaled[test_idx]
+            y_train = y[train_idx]
+
+            model = lgb.LGBMClassifier(**LGBM_PARAMS)
+            model.fit(X_train, y_train)
+
+            y_pred_cv.append(model.predict(X_test)[0])
+            y_proba_cv.append(model.predict_proba(X_test)[0, 1])
+
+        y_pred_cv = np.array(y_pred_cv)
+        y_proba_cv = np.array(y_proba_cv)
+
+        # 全データで最終学習
+        self.model = lgb.LGBMClassifier(**LGBM_PARAMS)
+        self.model.fit(X_scaled, y)
+
+        # 評価指標
+        cv_acc = accuracy_score(y, y_pred_cv)
+
+        try:
+            cv_auc = roc_auc_score(y, y_proba_cv)
+        except ValueError:
+            cv_auc = 0.5
+
+        try:
+            cv_logloss = log_loss(y, y_proba_cv)
+        except ValueError:
+            cv_logloss = float('inf')
+
+        metrics = {
+            "cv_accuracy": float(cv_acc),
+            "cv_auc": float(cv_auc),
+            "cv_log_loss": float(cv_logloss),
+            "n_samples": len(X),
+            "n_features": X.shape[1],
+            "feature_set": self.feature_set,
+            "y_pred_cv": y_pred_cv.tolist(),
+            "y_proba_cv": y_proba_cv.tolist(),
+        }
+
+        if verbose:
+            print(f"[{self.feature_set}] LOO-CV Accuracy: {cv_acc:.3f}, AUC: {cv_auc:.3f}, LogLoss: {cv_logloss:.3f}")
+
+        self._is_fitted = True
+        self._train_metrics = metrics
+
+        return metrics
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        if not self._is_fitted:
+            raise RuntimeError("Model not fitted. Call fit() first.")
+        X_scaled = self.scaler.transform(X)
+        return self.model.predict(X_scaled)
+
+    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+        if not self._is_fitted:
+            raise RuntimeError("Model not fitted. Call fit() first.")
+        X_scaled = self.scaler.transform(X)
+        return self.model.predict_proba(X_scaled)[:, 1]
+
+    def get_feature_importance(self) -> np.ndarray:
+        if not self._is_fitted:
+            raise RuntimeError("Model not fitted. Call fit() first.")
+        return self.model.feature_importances_
+
+    def get_feature_importance_with_names(self) -> List[Tuple[str, float]]:
+        importance = self.get_feature_importance()
+        if self._feature_names:
+            pairs = list(zip(self._feature_names, importance))
+        else:
+            pairs = [(f"feature_{i}", imp) for i, imp in enumerate(importance)]
+        return sorted(pairs, key=lambda x: x[1], reverse=True)
+
+    def save(self, path: Union[str, Path]) -> None:
+        if not self._is_fitted:
+            raise RuntimeError("Model not fitted. Call fit() first.")
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        save_dict = {
+            "feature_set": self.feature_set,
+            "model": self.model,
+            "scaler": self.scaler,
+            "train_metrics": self._train_metrics,
+            "feature_names": self._feature_names,
+        }
+        joblib.dump(save_dict, path)
+
+    @classmethod
+    def load(cls, path: Union[str, Path]) -> "WinPredictorLGBM":
+        path = Path(path)
+        save_dict = joblib.load(path)
+        predictor = cls(feature_set=save_dict["feature_set"])
+        predictor.model = save_dict["model"]
+        predictor.scaler = save_dict["scaler"]
+        predictor._train_metrics = save_dict["train_metrics"]
+        predictor._feature_names = save_dict["feature_names"]
+        predictor._is_fitted = True
+        return predictor
+
+
+# =============================================================================
 # ユーティリティ関数
 # =============================================================================
 
@@ -404,6 +551,7 @@ def train_all_models(
     vision_predictor=None,
     verbose: bool = True,
     include_tactical: bool = True,
+    model_type: str = "logistic",
 ) -> Dict[str, Dict]:
     """
     全モデルを学習
@@ -415,6 +563,7 @@ def train_all_models(
         vision_predictor: Phase 5のVisionPredictor
         verbose: 進捗表示
         include_tactical: baseline_tacticalを含めるか
+        model_type: "logistic" or "lightgbm"
 
     Returns:
         {
@@ -436,7 +585,12 @@ def train_all_models(
             dataset, time_index, feature_set, vision_predictor
         )
 
-        predictor = WinPredictor(feature_set=feature_set)
+        # モデル選択
+        if model_type == "lightgbm":
+            predictor = WinPredictorLGBM(feature_set=feature_set)
+        else:
+            predictor = WinPredictor(feature_set=feature_set)
+
         metrics = predictor.fit_with_cv(X, y, feature_names=feature_names, verbose=verbose)
 
         # 特徴量重要度を追加
@@ -450,9 +604,64 @@ def train_all_models(
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
             time_name = dataset["times_ms"][time_index] // 60000
-            model_path = output_dir / f"{feature_set}_{time_name}min.joblib"
+            suffix = "_lgbm" if model_type == "lightgbm" else ""
+            model_path = output_dir / f"{feature_set}_{time_name}min{suffix}.joblib"
             predictor.save(model_path)
             if verbose:
                 print(f"モデル保存: {model_path}")
 
     return results
+
+
+def train_all_models_multi_time(
+    dataset: Dict,
+    output_dir: Optional[Path] = None,
+    vision_predictor=None,
+    verbose: bool = True,
+    include_tactical: bool = True,
+    model_type: str = "logistic",
+) -> Dict[str, Dict[str, Dict]]:
+    """
+    全時点・全モデルを一括学習
+
+    Args:
+        dataset: load_prediction_datasetの出力
+        output_dir: モデル保存先ディレクトリ
+        vision_predictor: Phase 5のVisionPredictor
+        verbose: 進捗表示
+        include_tactical: baseline_tacticalを含めるか
+        model_type: "logistic" or "lightgbm"
+
+    Returns:
+        {
+            "5min": {"baseline": {...}, "baseline_riot": {...}, ...},
+            "10min": {...},
+            ...
+        }
+    """
+    times_ms = dataset["times_ms"]
+    results_by_time = {}
+
+    model_name = "LightGBM" if model_type == "lightgbm" else "Logistic Regression"
+
+    for time_idx, time_ms in enumerate(times_ms):
+        time_name = f"{time_ms // 60000}min"
+
+        if verbose:
+            print("=" * 50)
+            print(f"{time_name}時点のモデル学習 ({model_name}, LOO-CV)")
+            print("=" * 50)
+
+        results = train_all_models(
+            dataset=dataset,
+            time_index=time_idx,
+            output_dir=output_dir,
+            vision_predictor=vision_predictor,
+            verbose=verbose,
+            include_tactical=include_tactical,
+            model_type=model_type,
+        )
+
+        results_by_time[time_name] = results
+
+    return results_by_time

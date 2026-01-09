@@ -433,3 +433,275 @@ def visualize_feature_importance(
         print(f"画像保存: {output_path}")
 
     plt.show()
+
+
+# =============================================================================
+# 日本語グラフ生成
+# =============================================================================
+
+def setup_japanese_font() -> str:
+    """
+    Windows環境で日本語フォントを設定
+
+    Returns:
+        使用するフォント名
+    """
+    import matplotlib.pyplot as plt
+    import matplotlib.font_manager as fm
+
+    # Windowsで利用可能な日本語フォント（優先順）
+    japanese_fonts = [
+        'Yu Gothic',      # Windows 10以降
+        'Meiryo',         # Windows Vista以降
+        'MS Gothic',      # 従来のWindowsフォント
+        'Hiragino Sans',  # macOS（互換性のため）
+    ]
+
+    available_fonts = set(f.name for f in fm.fontManager.ttflist)
+
+    for font in japanese_fonts:
+        if font in available_fonts:
+            plt.rcParams['font.family'] = font
+            plt.rcParams['axes.unicode_minus'] = False  # マイナス記号対策
+            return font
+
+    # フォントが見つからない場合は警告
+    print("警告: 日本語フォントが見つかりません。英語フォントを使用します。")
+    return 'sans-serif'
+
+
+def visualize_accuracy_over_time_ja(
+    results_by_time: Dict[str, Dict[str, Dict]],
+    output_path: Optional[Path] = None,
+    figsize: tuple = (10, 6),
+) -> None:
+    """
+    時間帯別の精度推移を日本語折れ線グラフで表示
+
+    Args:
+        results_by_time: {
+            "5min": {"baseline": {...}, "baseline_riot": {...}, ...},
+            "10min": {...},
+            ...
+        }
+        output_path: 出力先パス
+        figsize: 図のサイズ
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib がインストールされていません。可視化をスキップします。")
+        return
+
+    from .config import MODEL_NAMES_JA, MODEL_COLORS
+
+    # 日本語フォント設定
+    font_name = setup_japanese_font()
+
+    # データ準備
+    time_names = list(results_by_time.keys())
+    time_labels = []
+    for t in time_names:
+        # "5min" -> "5分" に変換
+        mins = t.replace("min", "")
+        time_labels.append(f"{mins}分")
+
+    model_keys = ["baseline", "baseline_riot", "baseline_grid", "baseline_tactical"]
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    for model_key in model_keys:
+        accuracies = []
+        for time_name in time_names:
+            if model_key in results_by_time.get(time_name, {}):
+                acc = results_by_time[time_name][model_key].get("cv_accuracy", 0)
+                accuracies.append(acc * 100)  # パーセント表示
+            else:
+                accuracies.append(None)
+
+        label = MODEL_NAMES_JA.get(model_key, model_key)
+        color = MODEL_COLORS.get(model_key, "#333333")
+
+        ax.plot(time_labels, accuracies, marker='o', label=label, color=color, linewidth=2, markersize=8)
+
+        # 各点に値を表示
+        for i, acc in enumerate(accuracies):
+            if acc is not None:
+                ax.annotate(f'{acc:.1f}%',
+                           xy=(time_labels[i], acc),
+                           xytext=(0, 8),
+                           textcoords="offset points",
+                           ha='center', va='bottom', fontsize=9)
+
+    ax.set_xlabel('評価時点', fontsize=12)
+    ax.set_ylabel('予測精度 (%)', fontsize=12)
+    ax.set_title('時間帯別 勝敗予測精度の推移', fontsize=14, fontweight='bold')
+    ax.legend(loc='lower right', fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.set_ylim(50, 100)
+
+    plt.tight_layout()
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"日本語グラフ保存: {output_path}")
+
+    plt.show()
+
+
+def visualize_contribution_over_time_ja(
+    results_by_time: Dict[str, Dict[str, Dict]],
+    output_path: Optional[Path] = None,
+    figsize: tuple = (10, 6),
+) -> None:
+    """
+    視界スコア追加による精度向上量を時点別に日本語グラフで表示
+
+    Args:
+        results_by_time: 時点ごとの結果辞書
+        output_path: 出力先パス
+        figsize: 図のサイズ
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        print("matplotlib がインストールされていません。可視化をスキップします。")
+        return
+
+    from .config import MODEL_NAMES_JA, MODEL_COLORS
+
+    # 日本語フォント設定
+    font_name = setup_japanese_font()
+
+    # データ準備
+    time_names = list(results_by_time.keys())
+    time_labels = []
+    for t in time_names:
+        mins = t.replace("min", "")
+        time_labels.append(f"{mins}分")
+
+    # ベースラインからの精度向上を計算
+    model_keys = ["baseline_riot", "baseline_tactical"]  # 主要モデルのみ
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    for model_key in model_keys:
+        lifts = []
+        for time_name in time_names:
+            baseline_acc = results_by_time.get(time_name, {}).get("baseline", {}).get("cv_accuracy", 0)
+            model_acc = results_by_time.get(time_name, {}).get(model_key, {}).get("cv_accuracy", 0)
+            lift = (model_acc - baseline_acc) * 100  # ポイント差
+            lifts.append(lift)
+
+        label = MODEL_NAMES_JA.get(model_key, model_key)
+        color = MODEL_COLORS.get(model_key, "#333333")
+
+        ax.plot(time_labels, lifts, marker='s', label=label, color=color, linewidth=2, markersize=8)
+
+        # 各点に値を表示
+        for i, lift in enumerate(lifts):
+            ax.annotate(f'+{lift:.1f}pt',
+                       xy=(time_labels[i], lift),
+                       xytext=(0, 8),
+                       textcoords="offset points",
+                       ha='center', va='bottom', fontsize=9)
+
+    ax.set_xlabel('評価時点', fontsize=12)
+    ax.set_ylabel('精度向上 (ポイント)', fontsize=12)
+    ax.set_title('視界スコア追加による精度向上の推移', fontsize=14, fontweight='bold')
+    ax.legend(loc='upper right', fontsize=10)
+    ax.grid(True, alpha=0.3)
+    ax.axhline(y=0, color='gray', linestyle='--', linewidth=1)
+
+    plt.tight_layout()
+
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"日本語グラフ保存: {output_path}")
+
+    plt.show()
+
+
+def generate_report_multi_time(
+    results_by_time: Dict[str, Dict[str, Dict]],
+    output_path: Optional[Path] = None,
+) -> str:
+    """
+    複数時点対応のレポート生成
+
+    Args:
+        results_by_time: {time_name: {model_name: metrics_dict}}
+        output_path: JSON出力先パス（オプション）
+
+    Returns:
+        レポート文字列
+    """
+    lines = []
+    lines.append("=" * 60)
+    lines.append("Phase 6: 勝敗予測モデル比較レポート（5分刻み）")
+    lines.append("=" * 60)
+
+    all_contributions = {}
+
+    for time_name, results in results_by_time.items():
+        lines.append(f"\n## {time_name}時点")
+        lines.append("-" * 40)
+
+        df = compare_models(results)
+        lines.append(df.to_string(index=False))
+
+        contributions = summarize_contributions(results)
+        all_contributions[time_name] = contributions
+
+        lines.append(f"\n### 視界スコア貢献度 ({time_name})")
+        for model_name, contrib in contributions.items():
+            lines.append(f"  {model_name}:")
+            lines.append(f"    精度向上: {contrib['absolute_lift_pct']:.2f}%")
+            lines.append(f"    相対貢献度: {contrib['relative_contribution_pct']:.2f}%")
+
+    # 結論
+    lines.append("\n" + "=" * 60)
+    lines.append("## 結論")
+    lines.append("-" * 40)
+
+    # 最良モデルを特定
+    best_model = None
+    best_acc = 0
+    best_time = None
+
+    for time_name, results in results_by_time.items():
+        for model_name, metrics in results.items():
+            acc = metrics.get("cv_accuracy", 0)
+            if acc > best_acc:
+                best_acc = acc
+                best_model = model_name
+                best_time = time_name
+
+    if best_model:
+        lines.append(f"最高精度: {best_model} @ {best_time} (Accuracy: {best_acc:.3f})")
+
+    report = "\n".join(lines)
+
+    # JSON出力
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        json_data = {
+            time_name: {
+                "results": results,
+                "contributions": all_contributions.get(time_name, {}),
+            }
+            for time_name, results in results_by_time.items()
+        }
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(json_data, f, indent=2, ensure_ascii=False, default=str)
+
+        print(f"JSON保存: {output_path}")
+
+    return report

@@ -11,11 +11,33 @@ from typing import List
 # =============================================================================
 
 PREDICTION_TIMES_MS: List[int] = [
+    5 * 60 * 1000,   # 5分
     10 * 60 * 1000,  # 10分
+    15 * 60 * 1000,  # 15分
     20 * 60 * 1000,  # 20分
+    25 * 60 * 1000,  # 25分
 ]
 
-PREDICTION_TIMES_NAMES: List[str] = ["10min", "20min"]
+PREDICTION_TIMES_NAMES: List[str] = ["5min", "10min", "15min", "20min", "25min"]
+PREDICTION_TIMES_NAMES_JA: List[str] = ["5分", "10分", "15分", "20分", "25分"]
+
+# =============================================================================
+# 日本語表示用定義
+# =============================================================================
+
+MODEL_NAMES_JA = {
+    "baseline": "ベースライン",
+    "baseline_riot": "+Riot視界スコア",
+    "baseline_grid": "+グリッド特徴量",
+    "baseline_tactical": "+戦術スコア",
+}
+
+MODEL_COLORS = {
+    "baseline": "#4C72B0",         # 青
+    "baseline_riot": "#55A868",    # 緑
+    "baseline_grid": "#C44E52",    # 赤
+    "baseline_tactical": "#8172B3", # 紫
+}
 
 # =============================================================================
 # 特徴量定義
@@ -89,6 +111,22 @@ RED_TEAM_ID = 200
 # ロジスティック回帰
 LOGISTIC_C = 0.1  # 正則化強度
 LOGISTIC_MAX_ITER = 1000
+
+# LightGBM
+LGBM_PARAMS = {
+    "objective": "binary",
+    "metric": "binary_logloss",
+    "boosting_type": "gbdt",
+    "num_leaves": 8,           # 小さめに設定（過学習防止）
+    "max_depth": 3,            # 浅めの木
+    "learning_rate": 0.05,
+    "n_estimators": 100,
+    "min_child_samples": 5,    # 小規模データ向け
+    "reg_alpha": 0.1,          # L1正則化
+    "reg_lambda": 0.1,         # L2正則化
+    "random_state": 42,
+    "verbose": -1,
+}
 
 # =============================================================================
 # グリッド設定（Phase 5との整合性）
