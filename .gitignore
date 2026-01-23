@@ -146,3 +146,16 @@ runs/
 
 # Windows reserved device names (cannot be tracked by Git)
 nul
+
+# Generated output directories (can be regenerated from scripts)
+debug/
+reports/
+heatmaps/
+
+# Backup files
+*.bak*
+
+# Generated analysis images
+comparison.png
+river_sight_analysis.png
+map11.png
