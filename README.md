@@ -10,6 +10,9 @@
 - ミニマップからward座標の推定、timelineデータをもとに設置・削除時刻の反映（精度80%前後）
 - 視界スコアの重み計算と特徴量の作成
 - 簡単な勝敗予測モデルを用いた効果測定
+ward検出モデルはここから入手できます
+https://drive.google.com/drive/folders/1iD4XKUcxOs1x63c8RTcz7H104TexBQ7c?usp=drive_link
+
 
 ## 主な成果
 

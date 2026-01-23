@@ -150,7 +150,6 @@ nul
 # Generated output directories (can be regenerated from scripts)
 debug/
 reports/
-heatmaps/
 
 # Backup files
 *.bak*
