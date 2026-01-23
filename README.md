@@ -1,11 +1,15 @@
 # pyLoL-v2: League of Legends 視界スコア分析による勝敗予測
 ##　はじめに
+
 このレポジトリはpylolプロジェクトをフォークしたものです
 引用元：https://github.com/league-of-legends-replay-extractor/pyLoL
 
 ##　このレポジトリで出来る事
-- 2026/1/10時点でのLoLcliant、riotAPIを用いたroflファイル、match,timelieデータ収集フロー
--
+- 2026/1/10時点でのLoLcliant、riotAPIを用いたroflファイル、match,timelieデータ収集フローの構築
+- wardアイコンの検出（４種）
+- ミニマップからward座標の推定、timelineデータをもとに設置・削除時刻の反映（精度80%前後）
+- 視界スコアの重み計算と特徴量の作成
+- 簡単な勝敗予測モデルを用いた効果測定
 
 ## 主な成果
 
