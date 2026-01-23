@@ -4,7 +4,7 @@
 引用元：https://github.com/league-of-legends-replay-extractor/pyLoL
 
 ##　このレポジトリで出来る事
-- 
+- 2026/1/10時点でのLoLcliant、riotAPIを用いたroflファイル、match,timelieデータ収集フロー
 -
 
 ## 主な成果
@@ -212,11 +212,9 @@ YOLO検出結果とRiot APIタイムラインデータのマッチングに最�
 - [Phase 5: 視界スコア設計](docs/phase5_vision_score.md)
 - [Phase 6: 分析レポート](results/phase6_analysis_report.md)
 
-## ライセンス
-
-MIT License
 
 ## 参考文献
-
+- WARDS: Modelling the Worth of Vision in MOBA’s
+- https://github.com/league-of-legends-replay-extractor/pyLoL
 - Riot Games API Documentation
 - YOLOv8 (Ultralytics)
