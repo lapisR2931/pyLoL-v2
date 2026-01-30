@@ -136,7 +136,8 @@ dragontail-*.tgz
 data/
 
 # Claude Code local settings
-.claude/settings.local.json
+.claude/
+CLAUDE.md
 
 # Output directories
 output/
