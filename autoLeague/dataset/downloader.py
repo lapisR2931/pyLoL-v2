@@ -1,111 +1,127 @@
-import requests
-import base64
-import subprocess
+from __future__ import annotations
+
+import asyncio
 import json
-import asyncio, aiohttp, ssl
+import ssl
+from typing import Iterable, Optional
 
-class ReplayDownloader(object):
+import aiohttp
+import requests
 
-    def __init__(self):
-        self.replays_dir = None #リプレイ保存ディレクトリ
-        self.token = None       #LoLクライアント認証トークン
-        self.port = None        #LoLクライアントプロセスのポート番号
+from autoLeague.base import BaseLcuClient, LcuConfig
 
-        # 現在Windowsのみ対応
-        # wmic PROCESS WHERE name='LeagueClientUx.exe' GET commandline
-        # PowerShellコマンドリストの構成
-        command = [
-            "powershell",
-            "-Command",
-            "Get-WmiObject -Query \"Select CommandLine from Win32_Process Where Name='LeagueClientUx.exe'\""
-        ]
-        process =  subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-        output, error = process.communicate()
 
-        if error:
-            raise ProcessLookupError("⚠️ LoLクライアントが実行中か確認してください。")
-        else:
-            cmd = output.strip().split('"')
-            for i in cmd:
-                if i.find("remoting-auth-token") != -1:
-                    self.token = i.split("=")[1]
-                elif i.find("app-port") != -1:
-                    self.port = i.split("=")[1]
+class ReplayDownloader(BaseLcuClient):
 
-        print('remoting-auth-token :', self.token)
-    '''リプレイダウンロード位置設定'''
-    def set_replays_dir(self,folder_dir):
+    def __init__(
+        self,
+        lcu_port: Optional[str] = None,
+        lcu_token: Optional[str] = None,
+        concurrent: int = 6,
+    ) -> None:
+        config = LcuConfig(
+            lcu_port=lcu_port,
+            lcu_token=lcu_token,
+            concurrent_downloads=concurrent,
+        )
+        super().__init__(config)
+        self.replays_dir: Optional[str] = None
+        if self._config.lcu_token:
+            print(f"remoting-auth-token : {self._config.lcu_token}")
+
+    # ------------------------------------------------------------------
+    # 後方互換プロパティ
+    # ------------------------------------------------------------------
+    @property
+    def port(self) -> Optional[str]:
+        return self._config.lcu_port
+
+    @property
+    def token(self) -> Optional[str]:
+        return self._config.lcu_token
+
+    # ------------------------------------------------------------------
+    # リプレイダウンロード位置設定
+    # ------------------------------------------------------------------
+    def set_replays_dir(self, folder_dir: str) -> None:
+        """リプレイダウンロード位置設定"""
         requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
         requests.patch(
-                        f'https://127.0.0.1:{self.port}/lol-settings/v1/local/lol-replays',
-                        headers={
-                            'Accept': 'application/json',
-                            'Content-Type': 'application/json'
-                        },
-                        data = json.dumps({
-                            "replays-folder-path": folder_dir
-                        }),
-                        verify=False
-                    )
-        
+            f'{self._config.lcu_base_url}/lol-settings/v1/local/lol-replays',
+            headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            data=json.dumps({
+                "replays-folder-path": folder_dir
+            }),
+            verify=False
+        )
+
         self.replays_dir = folder_dir
 
-
-    '''リプレイファイル(gameId.rofl)ダウンロード'''
-    def download(self,gameId):
+    # ------------------------------------------------------------------
+    # リプレイファイル(gameId.rofl)ダウンロード
+    # ------------------------------------------------------------------
+    def download(self, gameId: str) -> None:
+        """リプレイファイル(gameId.rofl)ダウンロード"""
         requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
         # リージョンプレフィックス（KR_, JP1_, NA1_など）を除去して数値IDのみ取得
         numeric_id = gameId.split("_")[-1] if "_" in gameId else gameId
-        url = f'https://127.0.0.1:{self.port}/lol-replays/v1/rofls/{numeric_id}/download/graceful'
-        auth = 'Basic ' + base64.b64encode(f'riot:{self.token}'.encode()).decode()
+        url = f'{self._config.lcu_base_url}/lol-replays/v1/rofls/{numeric_id}/download/graceful'
         requests.post(
-                        url,
-                        headers={
-                            'Accept': 'application/json',
-                            'Content-Type': 'application/json',
-                            'Authorization': auth
-                        },
-                        json={'componentType': 'string'},
-                        verify=False
-                    )
-        
+            url,
+            headers={
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'Authorization': self._config.auth_header
+            },
+            json={'componentType': 'string'},
+            verify=False
+        )
+
     # ────────────────────────────────────
     # 非同期(並列) API
     # ────────────────────────────────────
-    async def _download_one(self, session: aiohttp.ClientSession, game_id: str):
+    async def _download_one(self, session: aiohttp.ClientSession, game_id: str) -> None:
         """内部用・単一POST"""
         # リージョンプレフィックス（KR_, JP1_, NA1_など）を除去して数値IDのみ取得
         numeric_id = game_id.split("_")[-1] if "_" in game_id else game_id
-        url = (f"https://127.0.0.1:{self.port}"
+        url = (f"{self._config.lcu_base_url}"
                f"/lol-replays/v1/rofls/{numeric_id}/download/graceful")
         async with session.post(url, json={"componentType": "string"}) as resp:
             if resp.status not in (200, 202, 204):
                 err = await resp.text()
                 print(f"[{game_id}] 失敗 {resp.status}: {err}")
 
-    async def download_async(self, game_ids, concurrent: int = 6):
+    async def download_async(
+        self,
+        game_ids: Iterable[str],
+        concurrent: Optional[int] = None,
+    ) -> None:
         """
         複数のmatchId iterableを並列でダウンロード。
-        • Jupyterセル :   await rd.download_async(ids)
-        • スクリプト  :   asyncio.run(rd.download_async(ids))
+        * Jupyterセル :   await rd.download_async(ids)
+        * スクリプト  :   asyncio.run(rd.download_async(ids))
         """
+        concurrent = concurrent or self._config.concurrent_downloads
+
         ssl_ctx = ssl.create_default_context()
         ssl_ctx.check_hostname = False
         ssl_ctx.verify_mode = ssl.CERT_NONE
 
-        auth = "Basic " + base64.b64encode(f"riot:{self.token}".encode()).decode()
         conn = aiohttp.TCPConnector(limit=concurrent, ssl=ssl_ctx)
         async with aiohttp.ClientSession(
             connector=conn,
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",
-                "Authorization": auth,
+                "Authorization": self._config.auth_header,
             }) as session:
 
             sem = asyncio.Semaphore(concurrent)
 
-            async def sem_task(gid):
+            async def sem_task(gid: str) -> None:
                 async with sem:
                     await self._download_one(session, gid)
 
